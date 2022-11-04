@@ -156,4 +156,38 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 	}
 }
 
-// TODO test closing jobs channel and calling Stop()
+func TestWorkerPool_StopIfJobsClosed(t *testing.T) {
+	jobs := make(chan Job)
+	p, err := NewSimplePool(5, jobs)
+	if err != nil {
+		t.Fatal("error making worker pool:", err)
+	}
+	p.Start()
+
+	close(jobs)
+	p.Stop()
+}
+
+func TestWorkerPool_CloseJobsAfterStop(t *testing.T) {
+	jobs := make(chan Job)
+	p, err := NewSimplePool(5, jobs)
+	if err != nil {
+		t.Fatal("error making worker pool:", err)
+	}
+	p.Start()
+
+	p.Stop()
+	close(jobs)
+}
+
+func TestWorkerPool_StartWithClosedJobs(t *testing.T) {
+	jobs := make(chan Job)
+	close(jobs)
+	p, err := NewSimplePool(5, jobs)
+	if err != nil {
+		t.Fatal("error making worker pool:", err)
+	}
+	p.Start()
+
+	p.Stop()
+}
