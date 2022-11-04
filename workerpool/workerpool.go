@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time"
 )
 
 type Pool interface {
@@ -75,10 +74,7 @@ func (p *SimplePool) startWorkers() {
 		go func(workerNum int) {
 			log.Printf("starting worker %d", workerNum)
 
-			ticker := time.NewTicker(10 * time.Second)
 			for {
-				ticker.Reset(10 * time.Second)
-
 				select {
 				case <-p.quit:
 					log.Printf("stopping worker %d with quit channel\n", workerNum)
@@ -92,9 +88,6 @@ func (p *SimplePool) startWorkers() {
 					if err := job.Execute(); err != nil {
 						job.OnFailure(err)
 					}
-				case t := <-ticker.C:
-					// this is mostly for developers to catch that the worker is waiting around idle
-					log.Printf("worker %d idle at %v\n", workerNum, t)
 				}
 			}
 		}(i)

@@ -22,9 +22,11 @@ func (j *hungerJob) Execute() error {
 
 	time.Sleep(time.Duration(j.numBurgers/4) * time.Second)
 
-	if j.r.Intn(2) != 0 {
+	if j.r.Intn(4) != 0 {
 		return fmt.Errorf("%d burgers was too much :(", j.numBurgers)
 	}
+
+	log.Printf("Yay! I ate %d burgers!\n", j.numBurgers)
 	return nil
 }
 
@@ -39,25 +41,29 @@ func main() {
 	p, err := wp.NewSimplePool(25, jobs)
 	if err != nil {
 		log.Print("error making worker pool:", err)
+		return
 	}
 
 	p.Start()
 	defer p.Stop()
 
 	wg := &sync.WaitGroup{}
-	log.Print("dispatching jobs...")
-	for i := 1; i <= 100; i++ {
-		wg.Add(1)
-		jobs <- &hungerJob{
-			r:          seededRand,
-			numBurgers: i,
-			wg:         wg,
-		}
-	}
+	numJobs := 100
+	log.Printf("dispatching %d jobs...\n", numJobs)
 
-	// TODO why are we seeing workers idle sometimes??
+	go func() {
+		for i := 1; i <= numJobs; i++ {
+			wg.Add(1)
+			jobs <- &hungerJob{
+				r:          seededRand,
+				numBurgers: i,
+				wg:         wg,
+			}
+		}
+	}()
+
 	log.Print("waiting for all jobs to complete...")
-	wg.Done()
+	wg.Wait()
 
 	log.Print("all done!")
 }
