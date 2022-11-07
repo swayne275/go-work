@@ -10,13 +10,13 @@ import (
 	wp "github.com/swayne275/go-work/workerpool"
 )
 
-type hungerJob struct {
+type hungerTask struct {
 	r          *rand.Rand
 	numBurgers int
 	wg         *sync.WaitGroup
 }
 
-func (j *hungerJob) Execute() error {
+func (j *hungerTask) Execute() error {
 	defer j.wg.Done()
 	log.Printf("I'm so hungry, I'm gonna eat %d cheeseburgers!\n", j.numBurgers)
 
@@ -30,15 +30,15 @@ func (j *hungerJob) Execute() error {
 	return nil
 }
 
-func (j *hungerJob) OnFailure(e error) {
+func (j *hungerTask) OnFailure(e error) {
 	log.Printf("I couldn't do it: %v\n", e)
 }
 
 var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func main() {
-	jobs := make(chan wp.Job)
-	p, err := wp.NewSimplePool(25, jobs)
+	tasks := make(chan wp.Task)
+	p, err := wp.NewSimplePool(25, tasks)
 	if err != nil {
 		log.Print("error making worker pool:", err)
 		return
@@ -48,13 +48,13 @@ func main() {
 	defer p.Stop()
 
 	wg := &sync.WaitGroup{}
-	numJobs := 100
-	log.Printf("dispatching %d jobs...\n", numJobs)
+	numTasks := 100
+	log.Printf("dispatching %d tasks...\n", numTasks)
 
+	wg.Add(numTasks)
 	go func() {
-		for i := 1; i <= numJobs; i++ {
-			wg.Add(1)
-			jobs <- &hungerJob{
+		for i := 1; i <= numTasks; i++ {
+			tasks <- &hungerTask{
 				r:          seededRand,
 				numBurgers: i,
 				wg:         wg,
@@ -62,7 +62,7 @@ func main() {
 		}
 	}()
 
-	log.Print("waiting for all jobs to complete...")
+	log.Print("waiting for all tasks to complete...")
 	wg.Wait()
 
 	log.Print("all done!")

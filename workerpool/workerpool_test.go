@@ -8,21 +8,21 @@ import (
 )
 
 func TestWorkerPool_NewPool(t *testing.T) {
-	if _, err := NewSimplePool(0, make(chan Job)); err != ErrNoWorkers {
+	if _, err := NewSimplePool(0, make(chan Task)); err != ErrNoWorkers {
 		t.Fatalf("expected error when creating pool with 0 workers, got: %v", err)
 	}
 
-	if _, err := NewSimplePool(5, nil); err != ErrNilJobsCh {
+	if _, err := NewSimplePool(5, nil); err != ErrNilTasksCh {
 		t.Fatalf("expected error when creating pool with closed channel, got: %v", err)
 	}
 
-	if _, err := NewSimplePool(5, make(chan Job)); err != nil {
+	if _, err := NewSimplePool(5, make(chan Task)); err != nil {
 		t.Fatalf("expected no error creating pool, got: %v", err)
 	}
 }
 
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
-	p, err := NewSimplePool(5, make(chan Job))
+	p, err := NewSimplePool(5, make(chan Task))
 	if err != nil {
 		t.Fatal("error creating pool:", err)
 	}
@@ -36,7 +36,7 @@ func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
 	p.Stop()
 }
 
-type testJob struct {
+type testTask struct {
 	shouldErr bool
 	wg        *sync.WaitGroup
 
@@ -44,7 +44,7 @@ type testJob struct {
 	failureHandled bool
 }
 
-func (t *testJob) Execute() error {
+func (t *testTask) Execute() error {
 	defer t.wg.Done()
 
 	time.Sleep(50 * time.Millisecond)
@@ -55,14 +55,14 @@ func (t *testJob) Execute() error {
 	return nil
 }
 
-func (t *testJob) OnFailure(e error) {
+func (t *testTask) OnFailure(e error) {
 	t.mFailure.Lock()
 	defer t.mFailure.Unlock()
 
 	t.failureHandled = true
 }
 
-func (t *testJob) hitFailureCase() bool {
+func (t *testTask) hitFailureCase() bool {
 	t.mFailure.Lock()
 	defer t.mFailure.Unlock()
 
@@ -70,12 +70,12 @@ func (t *testJob) hitFailureCase() bool {
 }
 
 func TestWorkerPool_Work(t *testing.T) {
-	var jobs []*testJob
+	var tasks []*testTask
 	wg := &sync.WaitGroup{}
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		jobs = append(jobs, &testJob{
+		tasks = append(tasks, &testTask{
 			shouldErr: false,
 			wg:        wg,
 
@@ -83,35 +83,35 @@ func TestWorkerPool_Work(t *testing.T) {
 		})
 	}
 
-	jobsCh := make(chan Job, len(jobs))
-	for _, j := range jobs {
-		jobsCh <- j
+	tasksCh := make(chan Task, len(tasks))
+	for _, j := range tasks {
+		tasksCh <- j
 	}
 
-	p, err := NewSimplePool(5, jobsCh)
+	p, err := NewSimplePool(5, tasksCh)
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
 
-	// we'll get a timeout failure if the jobs weren't processed
+	// we'll get a timeout failure if the tasks weren't processed
 	wg.Wait()
 
-	for jobNum, job := range jobs {
-		if job.hitFailureCase() {
-			t.Fatalf("error function called on job %d when it shouldn't be", jobNum)
+	for taskNum, task := range tasks {
+		if task.hitFailureCase() {
+			t.Fatalf("error function called on task %d when it shouldn't be", taskNum)
 		}
 	}
 }
 
 func TestWorkerPool_WorkWithErrors(t *testing.T) {
-	var jobs []*testJob
+	var tasks []*testTask
 	wg := &sync.WaitGroup{}
 
 	// first 10 workers succeed
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		jobs = append(jobs, &testJob{
+		tasks = append(tasks, &testTask{
 			shouldErr: false,
 			wg:        wg,
 
@@ -122,7 +122,7 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 	// second 10 workers fail
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		jobs = append(jobs, &testJob{
+		tasks = append(tasks, &testTask{
 			shouldErr: true,
 			wg:        wg,
 
@@ -130,60 +130,60 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 		})
 	}
 
-	jobsCh := make(chan Job, len(jobs))
-	for _, j := range jobs {
-		jobsCh <- j
+	tasksCh := make(chan Task, len(tasks))
+	for _, j := range tasks {
+		tasksCh <- j
 	}
 
-	p, err := NewSimplePool(5, jobsCh)
+	p, err := NewSimplePool(5, tasksCh)
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
 
-	// we'll get a timeout failure if the jobs weren't processed
+	// we'll get a timeout failure if the tasks weren't processed
 	wg.Wait()
 
-	for jobNum, job := range jobs {
-		if job.hitFailureCase() {
-			// the first 10 jobs succeed, the second 10 fail
-			if jobNum >= 10 {
+	for taskNum, task := range tasks {
+		if task.hitFailureCase() {
+			// the first 10 tasks succeed, the second 10 fail
+			if taskNum >= 10 {
 				continue
 			}
 
-			t.Fatalf("error function called on job %d when it shouldn't be", jobNum)
+			t.Fatalf("error function called on task %d when it shouldn't be", taskNum)
 		}
 	}
 }
 
-func TestWorkerPool_StopIfJobsClosed(t *testing.T) {
-	jobs := make(chan Job)
-	p, err := NewSimplePool(5, jobs)
+func TestWorkerPool_StopIfTasksClosed(t *testing.T) {
+	tasks := make(chan Task)
+	p, err := NewSimplePool(5, tasks)
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
 
-	close(jobs)
+	close(tasks)
 	p.Stop()
 }
 
-func TestWorkerPool_CloseJobsAfterStop(t *testing.T) {
-	jobs := make(chan Job)
-	p, err := NewSimplePool(5, jobs)
+func TestWorkerPool_CloseTasksAfterStop(t *testing.T) {
+	tasks := make(chan Task)
+	p, err := NewSimplePool(5, tasks)
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
 
 	p.Stop()
-	close(jobs)
+	close(tasks)
 }
 
-func TestWorkerPool_StartWithClosedJobs(t *testing.T) {
-	jobs := make(chan Job)
-	close(jobs)
-	p, err := NewSimplePool(5, jobs)
+func TestWorkerPool_StartWithClosedTasks(t *testing.T) {
+	tasks := make(chan Task)
+	close(tasks)
+	p, err := NewSimplePool(5, tasks)
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}

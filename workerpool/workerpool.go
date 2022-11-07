@@ -11,7 +11,7 @@ type Pool interface {
 	Stop()
 }
 
-type Job interface {
+type Task interface {
 	// Execute performs the work
 	Execute() error
 	// OnFailure handles any error returned from Execute()
@@ -20,7 +20,7 @@ type Job interface {
 
 type SimplePool struct {
 	numWorkers int
-	jobs       chan Job
+	tasks      chan Task
 
 	// ensure the pool can only be started once
 	start sync.Once
@@ -34,19 +34,19 @@ type SimplePool struct {
 var _ Pool = (*SimplePool)(nil)
 
 var ErrNoWorkers = fmt.Errorf("attempting to create worker pool with zero workers")
-var ErrNilJobsCh = fmt.Errorf("attempting to create worker pool with nil jobs channel")
+var ErrNilTasksCh = fmt.Errorf("attempting to create worker pool with nil tasks channel")
 
-func NewSimplePool(numWorkers int, jobs chan Job) (Pool, error) {
+func NewSimplePool(numWorkers int, tasks chan Task) (Pool, error) {
 	if numWorkers == 0 {
 		return nil, ErrNoWorkers
 	}
-	if jobs == nil {
-		return nil, ErrNilJobsCh
+	if tasks == nil {
+		return nil, ErrNilTasksCh
 	}
 
 	return &SimplePool{
 		numWorkers: numWorkers,
-		jobs:       jobs,
+		tasks:      tasks,
 
 		start: sync.Once{},
 		stop:  sync.Once{},
@@ -79,14 +79,14 @@ func (p *SimplePool) startWorkers() {
 				case <-p.quit:
 					log.Printf("stopping worker %d with quit channel\n", workerNum)
 					return
-				case job, ok := <-p.jobs:
+				case task, ok := <-p.tasks:
 					if !ok {
-						log.Printf("stopping worker %d with closed jobs channel\n", workerNum)
+						log.Printf("stopping worker %d with closed tasks channel\n", workerNum)
 						return
 					}
 
-					if err := job.Execute(); err != nil {
-						job.OnFailure(err)
+					if err := task.Execute(); err != nil {
+						task.OnFailure(err)
 					}
 				}
 			}
