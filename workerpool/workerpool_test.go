@@ -8,21 +8,23 @@ import (
 )
 
 func TestWorkerPool_NewPool(t *testing.T) {
-	if _, err := NewSimplePool(0, make(chan Task)); err != ErrNoWorkers {
+	if _, err := NewSimplePool(0, 0); err != ErrNoWorkers {
 		t.Fatalf("expected error when creating pool with 0 workers, got: %v", err)
 	}
-
-	if _, err := NewSimplePool(5, nil); err != ErrNilTasksCh {
-		t.Fatalf("expected error when creating pool with closed channel, got: %v", err)
+	if _, err := NewSimplePool(-1, 0); err != ErrNoWorkers {
+		t.Fatalf("expected error when creating pool with -1 workers, got: %v", err)
+	}
+	if _, err := NewSimplePool(1, -1); err != ErrNegativeChannelSize {
+		t.Fatalf("expected error when creating pool with -1 channel size, got: %v", err)
 	}
 
-	if _, err := NewSimplePool(5, make(chan Task)); err != nil {
+	if _, err := NewSimplePool(5, 0); err != nil {
 		t.Fatalf("expected no error creating pool, got: %v", err)
 	}
 }
 
 func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
-	p, err := NewSimplePool(5, make(chan Task))
+	p, err := NewSimplePool(5, 0)
 	if err != nil {
 		t.Fatal("error creating pool:", err)
 	}
@@ -83,16 +85,15 @@ func TestWorkerPool_Work(t *testing.T) {
 		})
 	}
 
-	tasksCh := make(chan Task, len(tasks))
-	for _, j := range tasks {
-		tasksCh <- j
-	}
-
-	p, err := NewSimplePool(5, tasksCh)
+	p, err := NewSimplePool(5, len(tasks))
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
+
+	for _, j := range tasks {
+		p.AddWork(j)
+	}
 
 	// we'll get a timeout failure if the tasks weren't processed
 	wg.Wait()
@@ -130,16 +131,15 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 		})
 	}
 
-	tasksCh := make(chan Task, len(tasks))
-	for _, j := range tasks {
-		tasksCh <- j
-	}
-
-	p, err := NewSimplePool(5, tasksCh)
+	p, err := NewSimplePool(5, len(tasks))
 	if err != nil {
 		t.Fatal("error making worker pool:", err)
 	}
 	p.Start()
+
+	for _, j := range tasks {
+		p.AddWork(j)
+	}
 
 	// we'll get a timeout failure if the tasks weren't processed
 	wg.Wait()
@@ -154,40 +154,4 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 			t.Fatalf("error function called on task %d when it shouldn't be", taskNum)
 		}
 	}
-}
-
-func TestWorkerPool_StopIfTasksClosed(t *testing.T) {
-	tasks := make(chan Task)
-	p, err := NewSimplePool(5, tasks)
-	if err != nil {
-		t.Fatal("error making worker pool:", err)
-	}
-	p.Start()
-
-	close(tasks)
-	p.Stop()
-}
-
-func TestWorkerPool_CloseTasksAfterStop(t *testing.T) {
-	tasks := make(chan Task)
-	p, err := NewSimplePool(5, tasks)
-	if err != nil {
-		t.Fatal("error making worker pool:", err)
-	}
-	p.Start()
-
-	p.Stop()
-	close(tasks)
-}
-
-func TestWorkerPool_StartWithClosedTasks(t *testing.T) {
-	tasks := make(chan Task)
-	close(tasks)
-	p, err := NewSimplePool(5, tasks)
-	if err != nil {
-		t.Fatal("error making worker pool:", err)
-	}
-	p.Start()
-
-	p.Stop()
 }

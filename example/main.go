@@ -37,8 +37,7 @@ func (j *hungerTask) OnFailure(e error) {
 var seededRand *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func main() {
-	tasks := make(chan wp.Task)
-	p, err := wp.NewSimplePool(25, tasks)
+	p, err := wp.NewSimplePool(25, 0)
 	if err != nil {
 		log.Print("error making worker pool:", err)
 		return
@@ -54,11 +53,11 @@ func main() {
 	wg.Add(numTasks)
 	go func() {
 		for i := 1; i <= numTasks; i++ {
-			tasks <- &hungerTask{
+			p.AddWork(&hungerTask{
 				r:          seededRand,
 				numBurgers: i,
 				wg:         wg,
-			}
+			})
 		}
 	}()
 

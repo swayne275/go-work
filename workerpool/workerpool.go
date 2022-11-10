@@ -7,8 +7,14 @@ import (
 )
 
 type Pool interface {
+	// Start gets the workerpool ready to process jobs, and should only be called once
 	Start()
+	// Stop stops the workerpool, tears down any required resources,
+	// and should only be called once
 	Stop()
+	// AddWork adds a task for the worker pool to process. It is only valid after
+	// Start() has been called and before Stop() has been called.
+	AddWork(Task)
 }
 
 type Task interface {
@@ -33,16 +39,18 @@ type SimplePool struct {
 
 var _ Pool = (*SimplePool)(nil)
 
-var ErrNoWorkers = fmt.Errorf("attempting to create worker pool with zero workers")
-var ErrNilTasksCh = fmt.Errorf("attempting to create worker pool with nil tasks channel")
+var ErrNoWorkers = fmt.Errorf("attempting to create worker pool with less than 1 worker")
+var ErrNegativeChannelSize = fmt.Errorf("attempting to create worker pool with a negative channel size")
 
-func NewSimplePool(numWorkers int, tasks chan Task) (Pool, error) {
-	if numWorkers == 0 {
+func NewSimplePool(numWorkers int, channelSize int) (Pool, error) {
+	if numWorkers <= 0 {
 		return nil, ErrNoWorkers
 	}
-	if tasks == nil {
-		return nil, ErrNilTasksCh
+	if channelSize < 0 {
+		return nil, ErrNegativeChannelSize
 	}
+
+	tasks := make(chan Task, channelSize)
 
 	return &SimplePool{
 		numWorkers: numWorkers,
@@ -67,6 +75,10 @@ func (p *SimplePool) Stop() {
 		log.Print("stopping simple worker pool")
 		close(p.quit)
 	})
+}
+
+func (p *SimplePool) AddWork(t Task) {
+	p.tasks <- t
 }
 
 func (p *SimplePool) startWorkers() {
