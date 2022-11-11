@@ -77,8 +77,13 @@ func (p *SimplePool) Stop() {
 	})
 }
 
+// AddWork adds work to the SimplePool. If the channel buffer is full (or 0) and
+// all workers are occupied, this will hang until work is consumed or Stop() is called.
 func (p *SimplePool) AddWork(t Task) {
-	p.tasks <- t
+	select {
+	case p.tasks <- t:
+	case <-p.quit:
+	}
 }
 
 func (p *SimplePool) startWorkers() {

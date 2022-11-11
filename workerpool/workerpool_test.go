@@ -39,6 +39,8 @@ func TestWorkerPool_MultipleStartStopDontPanic(t *testing.T) {
 }
 
 type testTask struct {
+	executeFunc func() error
+
 	shouldErr bool
 	wg        *sync.WaitGroup
 
@@ -46,11 +48,26 @@ type testTask struct {
 	failureHandled bool
 }
 
+func newTestTask(executeFunc func() error, shouldErr bool, wg *sync.WaitGroup) *testTask {
+	return &testTask{
+		executeFunc: executeFunc,
+		shouldErr:   shouldErr,
+		wg:          wg,
+		mFailure:    &sync.Mutex{},
+	}
+}
+
 func (t *testTask) Execute() error {
-	defer t.wg.Done()
+	if t.wg != nil {
+		defer t.wg.Done()
+	}
 
+	if t.executeFunc != nil {
+		return t.executeFunc()
+	}
+
+	// if no function provided, just wait and error if told to do so
 	time.Sleep(50 * time.Millisecond)
-
 	if t.shouldErr {
 		return fmt.Errorf("planned Execute() error")
 	}
@@ -77,12 +94,7 @@ func TestWorkerPool_Work(t *testing.T) {
 
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
-		tasks = append(tasks, &testTask{
-			shouldErr: false,
-			wg:        wg,
-
-			mFailure: &sync.Mutex{},
-		})
+		tasks = append(tasks, newTestTask(nil, false, wg))
 	}
 
 	p, err := NewSimplePool(5, len(tasks))
@@ -112,23 +124,13 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 	// first 10 workers succeed
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		tasks = append(tasks, &testTask{
-			shouldErr: false,
-			wg:        wg,
-
-			mFailure: &sync.Mutex{},
-		})
+		tasks = append(tasks, newTestTask(nil, false, wg))
 	}
 
 	// second 10 workers fail
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		tasks = append(tasks, &testTask{
-			shouldErr: true,
-			wg:        wg,
-
-			mFailure: &sync.Mutex{},
-		})
+		tasks = append(tasks, newTestTask(nil, true, wg))
 	}
 
 	p, err := NewSimplePool(5, len(tasks))
@@ -153,5 +155,43 @@ func TestWorkerPool_WorkWithErrors(t *testing.T) {
 
 			t.Fatalf("error function called on task %d when it shouldn't be", taskNum)
 		}
+	}
+}
+
+func TestWorkerPool_BlockedAddWorkReleaseAfterStop(t *testing.T) {
+	p, err := NewSimplePool(1, 0)
+	if err != nil {
+		t.Fatal("error making worker pool:", err)
+	}
+
+	p.Start()
+
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 3; i++ {
+		// the first should start processing right away, the second two should hang
+		wg.Add(1)
+		go func() {
+			p.AddWork(newTestTask(func() error {
+				time.Sleep(20 * time.Second)
+				return nil
+			}, false, nil))
+			wg.Done()
+		}()
+	}
+
+	done := make(chan struct{})
+	p.Stop()
+	go func() {
+		// wait on our AddWork calls to complete, then signal on the done channel
+		wg.Wait()
+		done <- struct{}{}
+	}()
+
+	// wait until either we hit our timeout, or we're told the AddWork calls completed
+	select {
+	case <-time.After(1 * time.Second):
+		t.Fatal("failed because still hanging on AddWork")
+	case <-done:
+		// this is the success case
 	}
 }
