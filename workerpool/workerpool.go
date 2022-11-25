@@ -86,6 +86,11 @@ func (p *SimplePool) AddWork(t Task) {
 	}
 }
 
+// AddWorkNonBlocking adds work to the SimplePool and returns immediately
+func (p *SimplePool) AddWorkNonBlocking(t Task) {
+	go p.AddWork(t)
+}
+
 func (p *SimplePool) startWorkers() {
 	for i := 0; i < p.numWorkers; i++ {
 		go func(workerNum int) {
